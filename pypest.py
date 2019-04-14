@@ -153,6 +153,13 @@ class Sample:
 
         return label
 
+    def get_history(self):
+        """Recursively returns the sample's history."""
+        history = self.history
+        if self.parent:
+            history = self.parent.get_history() + history
+        return history
+
 def get_sample(id):
     """Returns sample possessing id."""
     for sample in samples_global:
