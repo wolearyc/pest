@@ -33,15 +33,17 @@ def set_data_modules(*data_modules):
 def to_base_36(num):
     """Returns num, a base 10 integer, as a base 36 string.""" 
     b = 36
-    numerals='0123456789abcdefghijklmnopqrstuvwxyz'
+    numerals='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
     return ((num == 0) and numerals[0]) or (to_base_36(num // b).lstrip(numerals[0]) + numerals[num % b])
 
 class DataModule:
     """Abstract class implemented by all data modules. sub_path is a format
-    string describing data directories within a sample's directory."""
-    def __init__(self, label, sub_dir):
+    string describing data directories within a sample's directory. Version
+    is a unique string with the classes version."""
+    def __init__(self, label, sub_dir, version):
         self.label = label
         self.sub_dir = sub_dir
+        self.version = version
 
     def get_label(self):
         """Returns the data module's name."""
@@ -55,6 +57,25 @@ class DataModule:
         """Checks wether or not the sub directory exists for a sample."""
         file = Path(f'{sample.id}/{self.sub_dir}')
         return file.exists()
+
+    def reanalysis_needed_for(self, sample):
+        try:
+            version = None
+            with open(f'{sample.id}/{self.sub_dir}/version', 'r') as file:
+                version = file.read()
+            if version != self.version:
+                return True
+        except:
+            return True
+        return False
+
+    def run_analysis_on(self, sample):
+        """Runs an automatic analysis on the data."""
+        return None
+
+    def write_version(self, sample):
+        with open(f'{sample.id}/{self.sub_dir}/version', 'w') as file:
+            file.write(self.version)
 
 class Operation:
     """Abstract class implemented by all operations."""
@@ -160,12 +181,52 @@ class Sample:
             history = self.parent.get_history() + history
         return history
 
+    def analyze(self, data_module):
+        if data_module.data_exists_for(self):
+            return data_module.run_analysis_on(self)
+        return None
+
+    def analyze_all(self):
+        return [self.analyse(data_module) for data_module in data_modules_global]
+
+
 def get_sample(id):
     """Returns sample possessing id."""
     for sample in samples_global:
         if sample.id == id:
             return sample
     raise Exception(f'sample "{id}" could not be found')
+
+def update_progress_bar(modules_done, current_module, samples_done, tot_samples, current_sample):
+    module_label = current_module.label
+    sample_id = current_sample.id
+    tot_modules = len(data_modules_global)
+    bar = '#' * int(modules_done/tot_modules * 25)
+    output = f"\r {module_label} ({modules_done}/{tot_modules}): [{bar:25s}]   "
+    bar = '#' * int(samples_done/tot_samples * 25)
+    output += f" {sample_id} ({samples_done}/{tot_samples}): [{bar:25s}]"
+    print(output, end="", flush=True)
+
+
+# Autoanalysis
+def analyze_all():
+    for i, data_module in enumerate(data_modules_global):
+        samples = []
+        for sample in samples_global:
+            relevant = data_module.is_relevant_to(sample)
+            data_exists = data_module.data_exists_for(sample)
+            analysis_needed = data_module.reanalysis_needed_for(sample)
+            if relevant and data_exists and analysis_needed:
+                samples.append(sample)
+        for j, sample in enumerate(samples):
+            update_progress_bar(i+1, data_module, j+1, len(samples), sample)
+            try: 
+                data_module.run_analysis_on(sample)
+                data_module.write_version(sample)
+            except Exception as e:
+                print(colors.RED + f'{data_module.label} analysis on {sample.id} failed.' + colors.RESET)
+                print(e)
+    print('\n')
 
 
 # Printing
