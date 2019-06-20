@@ -95,11 +95,12 @@ class Operation:
 
 
 class Branch(Operation):
-    """Branches a sample, giving the new sample a new ID."""
+    """Branches a sample any number of times."""
     def __init__(self, branches = 1):
         super().__init__(name = "branch", label = None)
         self.branches = branches
 
+    """Application onto a sample results in a number of children"""
     def act_on(self, sample):
         if sample.children is None:
             sample.children = []
@@ -132,9 +133,9 @@ class Sample:
             i += 1
         id = f'{prefix}{to_base_36(i)}'
         
-        self.history   = [create_op] # List of past operations.
-        self.parent    = parent
-        self.children  = None
+        self.branch_history   = [create_op] # List of past operations.
+        self.parent    = parent      # Parent sample
+        self.children  = None        # List of children. Can be None.
         self.id        = id          # Numerical ID
         self.retired   = False       # If retired
         self.lost      = False       # If lost
@@ -144,7 +145,7 @@ class Sample:
     def do(self, operation):
         """Applies an operation, returning the results of the operation's act 
         method"""
-        self.history.append(operation)
+        self.branch_history.append(operation)
         return operation.act_on(self)
 
     def report_retired(self):
@@ -168,7 +169,13 @@ class Sample:
         label = ''
         if self.parent:
             label = self.parent.get_label()
-        for operation in self.history:
+        label += self.get_branch_label()
+        return label
+
+    def get_branch_label(self):
+        """Recursively returns the sample's label."""
+        label = ''
+        for operation in self.branch_history:
             if operation.get_label() is not None:
                 label += ' ' + operation.get_label()
 
@@ -176,10 +183,14 @@ class Sample:
 
     def get_history(self):
         """Recursively returns the sample's history."""
-        history = self.history
+        history = self.branch_history
         if self.parent:
             history = self.parent.get_history() + history
         return history
+
+    def get_branch_history(self):
+        """Returns the sample's history since the last branch."""
+        return self.branch_history
 
     def analyze(self, data_module):
         if data_module.data_exists_for(self):
@@ -198,6 +209,7 @@ def get_sample(id):
     raise Exception(f'sample "{id}" could not be found')
 
 def update_progress_bar(modules_done, current_module, samples_done, tot_samples, current_sample):
+    """Helper function for progress bars."""
     module_label = current_module.label
     sample_id = current_sample.id
     tot_modules = len(data_modules_global)
@@ -213,10 +225,11 @@ def analyze_all():
     for i, data_module in enumerate(data_modules_global):
         samples = []
         for sample in samples_global:
+            active = sample.is_active()
             relevant = data_module.is_relevant_to(sample)
             data_exists = data_module.data_exists_for(sample)
             analysis_needed = data_module.reanalysis_needed_for(sample)
-            if relevant and data_exists and analysis_needed:
+            if active and relevant and data_exists and analysis_needed:
                 samples.append(sample)
         for j, sample in enumerate(samples):
             update_progress_bar(i+1, data_module, j+1, len(samples), sample)
@@ -283,3 +296,18 @@ def print_active():
                 else:
                     l += ' ' * len(label) + ' '
             print(l)
+
+def print_tree():
+    print(colors.HEADER + ' Sample Tree '.center(120) + colors.RESET)
+    parents = [s for s in samples_global if s.parent == None and s.is_active()]
+    
+    def rec_helper(sample, depth):
+        l = colors.CYAN + ' ' * depth + f'  {sample.id}' + colors.RESET
+        l +=  sample.get_branch_label()
+        print(l)
+        if sample.children:
+            for child in sample.children:
+                rec_helper(child, depth + 1)
+    
+    for parent in parents:
+        rec_helper(parent, 0)
