@@ -129,7 +129,7 @@ class Sample:
 
         ids = [s.id for s in samples_global]
         i = 1
-        while(f'{prefix}{i}' in ids):
+        while(f'{prefix}{to_base_36(i)}' in ids):
             i += 1
         id = f'{prefix}{to_base_36(i)}'
         
